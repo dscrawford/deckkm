@@ -15,6 +15,7 @@ device is unregistered (input_dev_release_keys).
 """
 import argparse
 import json
+import os
 import queue
 import re
 import selectors
@@ -28,7 +29,7 @@ import time
 from evdev import InputDevice, ecodes as e, list_devices
 
 REC = struct.Struct("<BHHi")
-DEFAULT_HOST = "deck@192.168.0.80"
+DEFAULT_HOST = "deck@steamdeck"  # override with DECKKM_HOST or --host
 DEFAULT_SINK = "~/.local/bin/deckkm-sink.py"
 DEFAULT_EXCLUDE = r"Steam Controller|Webcam|deckkm"
 READY_TIMEOUT_S = 15
@@ -160,7 +161,8 @@ def shutdown(proc, q, thread):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--host", default=DEFAULT_HOST)
+    ap.add_argument("--host", default=os.environ.get("DECKKM_HOST", DEFAULT_HOST),
+                    help="ssh target (env DECKKM_HOST)")
     ap.add_argument("--sink", default=DEFAULT_SINK, help="sink path on the Deck")
     ap.add_argument("--hold", type=float, default=1.0, help="Esc hold seconds")
     ap.add_argument("--dev", action="append", default=[], help="/dev/input/eventN (repeatable); default: autodetect")

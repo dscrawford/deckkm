@@ -209,6 +209,21 @@ def test_main_list_does_not_connect(monkeypatch, capsys):
     assert "/dev/input/event9  k" in capsys.readouterr().err
 
 
+def test_main_host_from_env(monkeypatch):
+    seen = {}
+
+    def fake_start(host, sink, opts):
+        seen["host"] = host
+        raise SystemExit(0)
+    monkeypatch.setattr(km, "pick_devices", lambda paths, ex: [FakeDev("k", KBD)])
+    monkeypatch.setattr(km, "start_sink", fake_start)
+    monkeypatch.setenv("DECKKM_HOST", "deck@example")
+    monkeypatch.setattr("sys.argv", ["deckkm"])
+    with pytest.raises(SystemExit):
+        km.main()
+    assert seen["host"] == "deck@example"
+
+
 def test_main_no_devices_exits(monkeypatch):
     monkeypatch.setattr(km, "pick_devices", lambda paths, ex: [])
     monkeypatch.setattr("sys.argv", ["deckkm"])
