@@ -6,6 +6,7 @@ import time
 
 import pytest
 from evdev import ecodes as e
+from types import SimpleNamespace
 
 from conftest import load
 from fakes import FakeDev, FakeProc, ev
@@ -65,6 +66,41 @@ def test_wait_all_released_aborts_if_key_stuck():
     d.keys = {e.KEY_ENTER}
     with pytest.raises(SystemExit):
         km.wait_all_released([d], 0.1)
+
+
+def test_resolve_host_keeps_resolvable_names(monkeypatch):
+    monkeypatch.setattr(km.socket, "getaddrinfo", lambda *a: [()])
+    monkeypatch.setattr(km.subprocess, "run", lambda *a, **k: pytest.fail("must not call tailscale"))
+    assert km.resolve_host("deck@lan-host") == "deck@lan-host"
+
+
+def test_resolve_host_falls_back_to_tailscale(monkeypatch):
+    import socket as s
+    def fail(*a):
+        raise s.gaierror()
+    monkeypatch.setattr(km.socket, "getaddrinfo", fail)
+    calls = []
+    def run(cmd, **k):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="100.1.2.3\n")
+    monkeypatch.setattr(km.subprocess, "run", run)
+    assert km.resolve_host("deck@steamdeck") == "deck@100.1.2.3"
+    assert km.resolve_host("steamdeck") == "100.1.2.3"
+    assert calls[0] == ["tailscale", "ip", "-4", "steamdeck"]
+
+
+@pytest.mark.parametrize("outcome", ["unknown", "missing"])
+def test_resolve_host_unchanged_when_tailscale_cannot_help(monkeypatch, outcome):
+    import socket as s
+    def fail(*a):
+        raise s.gaierror()
+    monkeypatch.setattr(km.socket, "getaddrinfo", fail)
+    def run(cmd, **k):
+        if outcome == "missing":
+            raise FileNotFoundError("tailscale")
+        return SimpleNamespace(returncode=1, stdout="")
+    monkeypatch.setattr(km.subprocess, "run", run)
+    assert km.resolve_host("deck@nope") == "deck@nope"
 
 
 def test_wait_ready_ok():
@@ -219,6 +255,7 @@ def test_main_host_from_env(monkeypatch):
         raise SystemExit(0)
     monkeypatch.setattr(km, "pick_devices", lambda paths, ex: [FakeDev("k", KBD)])
     monkeypatch.setattr(km, "start_sink", fake_start)
+    monkeypatch.setattr(km, "resolve_host", lambda h: h)
     monkeypatch.setenv("DECKKM_HOST", "deck@example")
     monkeypatch.setattr("sys.argv", ["deckkm"])
     with pytest.raises(SystemExit):

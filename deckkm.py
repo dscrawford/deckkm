@@ -20,6 +20,7 @@ import queue
 import re
 import selectors
 import signal
+import socket
 import struct
 import subprocess
 import sys
@@ -76,6 +77,27 @@ def wait_all_released(devs, timeout):
         if time.monotonic() > deadline:
             sys.exit("keys still held after %ss; aborting" % timeout)
         time.sleep(0.02)
+
+
+def resolve_host(host):
+    """user@name -> user@ip via `tailscale ip` when DNS can't resolve `name`
+    (e.g. MagicDNS is off on this machine). Unchanged if it resolves or
+    tailscale doesn't know it."""
+    user, _, name = host.rpartition("@")
+    try:
+        socket.getaddrinfo(name, 22)
+        return host
+    except socket.gaierror:
+        pass
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4", name], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return host
+    ip = r.stdout.strip()
+    if r.returncode != 0 or not ip:
+        return host
+    print(f"  {name} -> {ip} (via tailscale)", file=sys.stderr)
+    return f"{user}@{ip}" if user else ip
 
 
 def start_sink(host, sink, ssh_opts):
@@ -180,17 +202,18 @@ def main():
     if a.list:
         return
 
-    proc = start_sink(a.host, a.sink, a.ssh_opt)
+    host = resolve_host(a.host)
+    proc = start_sink(host, a.sink, a.ssh_opt)
     proc.stdin.write(json.dumps({"devices": [describe(d) for d in devs]}).encode() + b"\n")
     proc.stdin.flush()
-    wait_ready(proc, READY_TIMEOUT_S, a.host)
+    wait_ready(proc, READY_TIMEOUT_S, host)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, lambda *_: sys.exit(1))
     wait_all_released(devs, IDLE_WAIT_S)
     for d in devs:
         d.grab()
-    print(f"forwarding to {a.host}; hold Esc {a.hold}s to release", file=sys.stderr)
+    print(f"forwarding to {host}; hold Esc {a.hold}s to release", file=sys.stderr)
     q, thread, dead = start_writer(proc)
     why = "stopped"
     try:

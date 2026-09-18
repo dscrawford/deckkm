@@ -13,10 +13,14 @@ import pytest
 
 from evdev import InputDevice, UInput, ecodes as e, list_devices
 
+from conftest import load
+
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOST = os.environ.get("DECKKM_HOST", "local")
 SINK = os.path.join(HERE, "deckkm-sink.py") if HOST == "local" else "~/.local/bin/deckkm-sink.py"
 HOLD = 0.5
+# the test's own ssh calls need the same name resolution deckkm does
+SSH_HOST = HOST if HOST == "local" else load("deckkm", "deckkm.py").resolve_host(HOST)
 
 
 def virtual_source():
@@ -80,7 +84,7 @@ def press(src, code, value):
 
 
 def remote_deckkm_devices():
-    out = subprocess.run(["ssh", HOST, "cat /sys/class/input/event*/device/name"],
+    out = subprocess.run(["ssh", SSH_HOST, "cat /sys/class/input/event*/device/name"],
                          capture_output=True, text=True).stdout
     return [n for n in out.splitlines() if n.startswith("deckkm ")]
 
