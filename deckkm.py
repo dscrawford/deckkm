@@ -86,16 +86,17 @@ def start_sink(host, sink, ssh_opts):
     return subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
 
-def wait_ready(proc, timeout):
+def wait_ready(proc, timeout, host):
     sel = selectors.DefaultSelector()
     sel.register(proc.stdout, selectors.EVENT_READ)
     if not sel.select(timeout):
         proc.kill()
-        sys.exit("sink did not report READY within %ss" % timeout)
+        sys.exit(f"sink on {host} did not report READY within {timeout}s")
     line = proc.stdout.readline()
     if line.strip() != b"READY":
         proc.kill()
-        sys.exit("sink failed: %r" % line)
+        hint = "" if line else " (ssh exited; check DECKKM_HOST / --host and key auth)"
+        sys.exit(f"sink on {host} failed: {line!r}{hint}")
 
 
 def writer(proc, q, dead):
@@ -182,7 +183,7 @@ def main():
     proc = start_sink(a.host, a.sink, a.ssh_opt)
     proc.stdin.write(json.dumps({"devices": [describe(d) for d in devs]}).encode() + b"\n")
     proc.stdin.flush()
-    wait_ready(proc, READY_TIMEOUT_S)
+    wait_ready(proc, READY_TIMEOUT_S, a.host)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, lambda *_: sys.exit(1))

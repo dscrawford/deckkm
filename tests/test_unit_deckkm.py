@@ -70,7 +70,7 @@ def test_wait_all_released_aborts_if_key_stuck():
 def test_wait_ready_ok():
     p = FakeProc()
     p.remote_says(b"READY\n")
-    km.wait_ready(p, 1)
+    km.wait_ready(p, 1, "deck@x")
     assert not p.killed
 
 
@@ -81,16 +81,18 @@ def test_wait_ready_bad_reply_kills_ssh(reply):
         p.remote_says(reply)
     else:
         os.close(p.stdout_w)
-    with pytest.raises(SystemExit):
-        km.wait_ready(p, 1)
+    with pytest.raises(SystemExit) as x:
+        km.wait_ready(p, 1, "deck@x")
     assert p.killed
+    assert "deck@x" in str(x.value)
+    assert ("DECKKM_HOST" in str(x.value)) == (reply == b"")
 
 
 def test_wait_ready_timeout_kills_ssh():
     p = FakeProc()
-    with pytest.raises(SystemExit):
-        km.wait_ready(p, 0.1)
-    assert p.killed
+    with pytest.raises(SystemExit) as x:
+        km.wait_ready(p, 0.1, "deck@x")
+    assert p.killed and "deck@x" in str(x.value)
 
 
 def test_writer_sets_dead_on_broken_pipe():
